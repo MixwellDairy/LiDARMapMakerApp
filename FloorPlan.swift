@@ -3,6 +3,9 @@ import RoomPlan
 import simd
 
 struct FloorPlan {
+    // Maximum distance in meters at which a point is considered "near" a door.
+    private static let doorProximityThreshold: Float = 0.5
+
     let lines: [FloorPlanLine]
     private let doorCenters: [SIMD2<Float>]
 
@@ -25,8 +28,7 @@ struct FloorPlan {
     }
 
     func isNearDoor(point: SIMD2<Float>) -> Bool {
-        let threshold: Float = 0.5
-        return doorCenters.contains { simd_distance($0, point) < threshold }
+        return doorCenters.contains { simd_distance($0, point) < Self.doorProximityThreshold }
     }
 
     private static func surfaceLine(transform: simd_float4x4, dimensions: SIMD3<Float>, isDoor: Bool) -> FloorPlanLine {
