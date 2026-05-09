@@ -206,7 +206,9 @@ struct FloorPlan {
 }
 
 private enum CapturedRoomExtractor {
+    // CapturedRoom is a nested object graph; this limit avoids runaway recursion while covering common depth.
     private static let maxReflectionDepthForCapturedRoomGraph = 8
+    // Fallback size in meters used when a captured surface does not expose dimensions.
     private static let defaultSurfaceSize = SIMD3<Float>(1, 1, 0.1)
 
     struct ExtractedSurface {
@@ -218,13 +220,10 @@ private enum CapturedRoomExtractor {
     static func extract(from room: CapturedRoom) -> [ExtractedSurface] {
         let candidates = nestedArrays(from: room, depth: 0, maxDepth: maxReflectionDepthForCapturedRoomGraph)
         return candidates.compactMap { candidate in
-            guard let geometry = extractGeometry(
-                in: candidate,
-                depth: 0,
-                maxDepth: maxReflectionDepthForCapturedRoomGraph
-            ) else { return nil }
+            guard let transform = directMatrix(in: candidate) else { return nil }
+            let size = directVector3(in: candidate) ?? defaultSurfaceSize
             let isDoor = isDoorLike(candidate)
-            return ExtractedSurface(transform: geometry.transform, size: geometry.size, isDoor: isDoor)
+            return ExtractedSurface(transform: transform, size: size, isDoor: isDoor)
         }
     }
 
@@ -262,37 +261,27 @@ private enum CapturedRoomExtractor {
         return result
     }
 
-    private static func extractGeometry(in value: Any, depth: Int, maxDepth: Int) -> (transform: simd_float4x4, size: SIMD3<Float>)? {
-        guard depth <= maxDepth else { return nil }
-
-        var foundMatrix: simd_float4x4?
-        var foundVector: SIMD3<Float>?
-
+    private static func directMatrix(in value: Any) -> simd_float4x4? {
         if let matrix = value as? simd_float4x4 {
-            foundMatrix = matrix
+            return matrix
         }
-        if let vector = value as? SIMD3<Float> {
-            foundVector = vector
-        }
-
         for child in Mirror(reflecting: value).children {
-            if let geometry = extractGeometry(in: child.value, depth: depth + 1, maxDepth: maxDepth) {
-                foundMatrix = foundMatrix ?? geometry.transform
-                foundVector = foundVector ?? geometry.size
-            }
-
-            if foundMatrix == nil, let matrix = child.value as? simd_float4x4 {
-                foundMatrix = matrix
-            }
-            if foundVector == nil, let vector = child.value as? SIMD3<Float> {
-                foundVector = vector
-            }
-            if foundMatrix != nil, foundVector != nil {
-                break
+            if let matrix = child.value as? simd_float4x4 {
+                return matrix
             }
         }
+        return nil
+    }
 
-        guard let matrix = foundMatrix else { return nil }
-        return (matrix, foundVector ?? defaultSurfaceSize)
+    private static func directVector3(in value: Any) -> SIMD3<Float>? {
+        if let vector = value as? SIMD3<Float> {
+            return vector
+        }
+        for child in Mirror(reflecting: value).children {
+            if let vector = child.value as? SIMD3<Float> {
+                return vector
+            }
+        }
+        return nil
     }
 }
