@@ -11,6 +11,6 @@ struct RoomCaptureContainer: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: RoomCaptureView, context _: Context) {
-        manager.bind(to: uiView)
+        _ = uiView
     }
 }

@@ -70,6 +70,8 @@ struct RoomSegment: Codable, Hashable {
 }
 
 struct Surface3D: Codable, Hashable {
+    private static let matrixElementCount = 16
+
     var size: SIMD3<Float>
     var matrix: simd_float4x4
     var isDoor: Bool
@@ -93,7 +95,9 @@ struct Surface3D: Codable, Hashable {
         size = SIMD3<Float>(sx, sy, sz)
 
         let matrixArray = try container.decode([Float].self, forKey: .matrix)
-        let values = matrixArray.count == 16 ? matrixArray : Array(repeating: 0, count: 16)
+        let values = matrixArray.count == matrixElementCount
+            ? matrixArray
+            : Array(repeating: 0, count: matrixElementCount)
         matrix = simd_float4x4(
             SIMD4<Float>(values[0], values[1], values[2], values[3]),
             SIMD4<Float>(values[4], values[5], values[6], values[7]),
@@ -141,6 +145,8 @@ struct FloorPlan {
     private var doorCenters: [SIMD2<Float>]
     private static let defaultDoorProximityThreshold: Float = 0.7
     private static let minimumHalfDimension: Float = 0.05
+    private static let halfDimensionMultiplier: Float = 0.5
+    private static let rectangleCornerCount = 4
 
     static func from(room: CapturedRoom) -> FloorPlan {
         let extracted = CapturedRoomExtractor.extract(from: room)
@@ -155,8 +161,8 @@ struct FloorPlan {
                 doorCenters.append(center)
             }
 
-            let halfX = max(item.size.x * 0.5, minimumHalfDimension)
-            let halfZ = max(item.size.z * 0.5, minimumHalfDimension)
+            let halfX = max(item.size.x * halfDimensionMultiplier, minimumHalfDimension)
+            let halfZ = max(item.size.z * halfDimensionMultiplier, minimumHalfDimension)
             let localCorners: [SIMD2<Float>] = [
                 SIMD2<Float>(-halfX, -halfZ),
                 SIMD2<Float>(halfX, -halfZ),
@@ -170,9 +176,9 @@ struct FloorPlan {
                 return SIMD2<Float>(worldX, worldZ)
             }
 
-            for i in 0..<4 {
+            for i in 0..<rectangleCornerCount {
                 let a = worldCorners[i]
-                let b = worldCorners[(i + 1) % 4]
+                let b = worldCorners[(i + 1) % rectangleCornerCount]
                 lines.append(FloorPlanLine(start: a, end: b, isDoor: item.isDoor))
             }
         }
