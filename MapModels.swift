@@ -55,10 +55,15 @@ struct RoomSegment: Codable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(Int.self, forKey: .id)
         let raw = try container.decode([[Float]].self, forKey: .pathPoints)
-        pathPoints = raw.map { value in
-            let x = value.indices.contains(0) ? value[0] : 0
-            let y = value.indices.contains(1) ? value[1] : 0
-            return SIMD2<Float>(x, y)
+        pathPoints = try raw.map { value in
+            guard value.count == 2 else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .pathPoints,
+                    in: container,
+                    debugDescription: "Each path point must contain exactly 2 Float values."
+                )
+            }
+            return SIMD2<Float>(value[0], value[1])
         }
     }
 
@@ -87,15 +92,24 @@ struct Surface3D: Codable, Hashable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let sizeArray = try container.decode([Float].self, forKey: .size)
-        let sx = sizeArray.indices.contains(0) ? sizeArray[0] : 0
-        let sy = sizeArray.indices.contains(1) ? sizeArray[1] : 0
-        let sz = sizeArray.indices.contains(2) ? sizeArray[2] : 0
-        size = SIMD3<Float>(sx, sy, sz)
+        guard sizeArray.count == 3 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .size,
+                in: container,
+                debugDescription: "Surface size must contain exactly 3 Float values."
+            )
+        }
+        size = SIMD3<Float>(sizeArray[0], sizeArray[1], sizeArray[2])
 
         let matrixArray = try container.decode([Float].self, forKey: .matrix)
-        let values = matrixArray.count == 16
-            ? matrixArray
-            : Array(repeating: 0, count: 16)
+        guard matrixArray.count == 16 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .matrix,
+                in: container,
+                debugDescription: "Surface matrix must contain exactly 16 Float values."
+            )
+        }
+        let values = matrixArray
         matrix = simd_float4x4(
             SIMD4<Float>(values[0], values[1], values[2], values[3]),
             SIMD4<Float>(values[4], values[5], values[6], values[7]),
