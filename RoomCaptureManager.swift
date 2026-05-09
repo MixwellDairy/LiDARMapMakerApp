@@ -2,6 +2,7 @@ import Foundation
 import RoomPlan
 import ARKit
 import simd
+import Combine
 
 final class RoomCaptureManager: NSObject, ObservableObject, RoomCaptureSessionDelegate {
     @Published var floors: [FloorMap] = [
