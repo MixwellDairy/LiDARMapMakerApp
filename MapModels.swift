@@ -25,7 +25,7 @@ struct FloorPlanLine: Codable, Hashable {
         let endY = try container.decode(Float.self, forKey: .endY)
         start = SIMD2<Float>(startX, startY)
         end = SIMD2<Float>(endX, endY)
-        isDoor = try container.decode(Bool.self, forKey: .isDoor)
+        isDoor = try container.decodeIfPresent(Bool.self, forKey: .isDoor) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -100,7 +100,7 @@ struct Surface3D: Codable, Hashable {
             SIMD4<Float>(values[8], values[9], values[10], values[11]),
             SIMD4<Float>(values[12], values[13], values[14], values[15])
         )
-        isDoor = try container.decode(Bool.self, forKey: .isDoor)
+        isDoor = try container.decodeIfPresent(Bool.self, forKey: .isDoor) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -127,8 +127,12 @@ struct Floor3DModel: Codable, Hashable {
     var id: Int
     var surfaces: [Surface3D]
 
-    static func from(room _: CapturedRoom) -> Floor3DModel {
-        Floor3DModel(id: 0, surfaces: [])
+    static func from(room: CapturedRoom) -> Floor3DModel {
+        let extracted = CapturedRoomExtractor.extract(from: room)
+        let surfaces = extracted.map { item in
+            Surface3D(size: item.size, matrix: item.transform, isDoor: item.isDoor)
+        }
+        return Floor3DModel(id: 0, surfaces: surfaces)
     }
 }
 
@@ -136,13 +140,110 @@ struct FloorPlan {
     var lines: [FloorPlanLine]
     private var doorCenters: [SIMD2<Float>]
 
-    static func from(room _: CapturedRoom) -> FloorPlan {
-        FloorPlan(lines: [], doorCenters: [])
+    static func from(room: CapturedRoom) -> FloorPlan {
+        let extracted = CapturedRoomExtractor.extract(from: room)
+        var lines: [FloorPlanLine] = []
+        var doorCenters: [SIMD2<Float>] = []
+
+        for item in extracted {
+            let tx = item.transform.columns.3.x
+            let tz = item.transform.columns.3.z
+            let center = SIMD2<Float>(tx, tz)
+            if item.isDoor {
+                doorCenters.append(center)
+            }
+
+            let halfX = max(item.size.x * 0.5, 0.05)
+            let halfZ = max(item.size.z * 0.5, 0.05)
+            let localCorners: [SIMD2<Float>] = [
+                SIMD2<Float>(-halfX, -halfZ),
+                SIMD2<Float>(halfX, -halfZ),
+                SIMD2<Float>(halfX, halfZ),
+                SIMD2<Float>(-halfX, halfZ)
+            ]
+
+            let worldCorners = localCorners.map { local -> SIMD2<Float> in
+                let worldX = tx + item.transform.columns.0.x * local.x + item.transform.columns.2.x * local.y
+                let worldZ = tz + item.transform.columns.0.z * local.x + item.transform.columns.2.z * local.y
+                return SIMD2<Float>(worldX, worldZ)
+            }
+
+            for i in 0..<4 {
+                let a = worldCorners[i]
+                let b = worldCorners[(i + 1) % 4]
+                lines.append(FloorPlanLine(start: a, end: b, isDoor: item.isDoor))
+            }
+        }
+
+        return FloorPlan(lines: lines, doorCenters: doorCenters)
     }
 
     func isNearDoor(point: SIMD2<Float>, threshold: Float = 0.7) -> Bool {
         doorCenters.contains {
             simd_distance($0, point) <= threshold
         }
+    }
+}
+
+private enum CapturedRoomExtractor {
+    struct ExtractedSurface {
+        var transform: simd_float4x4
+        var size: SIMD3<Float>
+        var isDoor: Bool
+    }
+
+    static func extract(from room: CapturedRoom) -> [ExtractedSurface] {
+        let candidates = nestedArrays(from: room, depth: 0, maxDepth: 8)
+        return candidates.compactMap { candidate in
+            guard let transform = firstMatrix(in: candidate, depth: 0, maxDepth: 8) else { return nil }
+            let size = firstVector3(in: candidate, depth: 0, maxDepth: 8) ?? SIMD3<Float>(1, 1, 0.1)
+            let typeText = String(describing: type(of: candidate)).lowercased()
+            let isDoor = typeText.contains("door") || typeText.contains("opening")
+            return ExtractedSurface(transform: transform, size: size, isDoor: isDoor)
+        }
+    }
+
+    private static func nestedArrays(from value: Any, depth: Int, maxDepth: Int) -> [Any] {
+        guard depth <= maxDepth else { return [] }
+        var result: [Any] = []
+        let mirror = Mirror(reflecting: value)
+
+        for child in mirror.children {
+            let childValue = child.value
+            let childMirror = Mirror(reflecting: childValue)
+            if childMirror.displayStyle == .collection {
+                result.append(contentsOf: childMirror.children.map(\.value))
+            } else if childMirror.displayStyle == .class || childMirror.displayStyle == .struct {
+                result.append(contentsOf: nestedArrays(from: childValue, depth: depth + 1, maxDepth: maxDepth))
+            }
+        }
+
+        return result
+    }
+
+    private static func firstMatrix(in value: Any, depth: Int, maxDepth: Int) -> simd_float4x4? {
+        guard depth <= maxDepth else { return nil }
+        if let matrix = value as? simd_float4x4 {
+            return matrix
+        }
+        for child in Mirror(reflecting: value).children {
+            if let matrix = firstMatrix(in: child.value, depth: depth + 1, maxDepth: maxDepth) {
+                return matrix
+            }
+        }
+        return nil
+    }
+
+    private static func firstVector3(in value: Any, depth: Int, maxDepth: Int) -> SIMD3<Float>? {
+        guard depth <= maxDepth else { return nil }
+        if let vector = value as? SIMD3<Float> {
+            return vector
+        }
+        for child in Mirror(reflecting: value).children {
+            if let vector = firstVector3(in: child.value, depth: depth + 1, maxDepth: maxDepth) {
+                return vector
+            }
+        }
+        return nil
     }
 }
