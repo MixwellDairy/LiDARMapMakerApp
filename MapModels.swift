@@ -265,19 +265,16 @@ private enum CapturedRoomExtractor {
             if let geometry = extractGeometry(in: child.value, depth: depth + 1, maxDepth: maxDepth) {
                 foundMatrix = foundMatrix ?? geometry.transform
                 foundVector = foundVector ?? geometry.size
-                if foundMatrix != nil, foundVector != nil {
-                    break
-                }
-            } else {
-                if foundMatrix == nil, let matrix = child.value as? simd_float4x4 {
-                    foundMatrix = matrix
-                }
-                if foundVector == nil, let vector = child.value as? SIMD3<Float> {
-                    foundVector = vector
-                }
-                if foundMatrix != nil, foundVector != nil {
-                    break
-                }
+            }
+
+            if foundMatrix == nil, let matrix = child.value as? simd_float4x4 {
+                foundMatrix = matrix
+            }
+            if foundVector == nil, let vector = child.value as? SIMD3<Float> {
+                foundVector = vector
+            }
+            if foundMatrix != nil, foundVector != nil {
+                break
             }
         }
 
