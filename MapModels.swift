@@ -173,13 +173,13 @@ struct FloorPlan {
                 doorCenters.append(center)
             }
 
-            let halfX = max(item.size.x * halfDimensionMultiplier, minimumHalfDimension)
-            let halfZ = max(item.size.z * halfDimensionMultiplier, minimumHalfDimension)
+            let halfWidth = max(item.size.x * halfDimensionMultiplier, minimumHalfDimension)
+            let halfDepth = max(item.size.z * halfDimensionMultiplier, minimumHalfDimension)
             let localCorners: [SIMD2<Float>] = [
-                SIMD2<Float>(-halfX, -halfZ),
-                SIMD2<Float>(halfX, -halfZ),
-                SIMD2<Float>(halfX, halfZ),
-                SIMD2<Float>(-halfX, halfZ)
+                SIMD2<Float>(-halfWidth, -halfDepth),
+                SIMD2<Float>(halfWidth, -halfDepth),
+                SIMD2<Float>(halfWidth, halfDepth),
+                SIMD2<Float>(-halfWidth, halfDepth)
             ]
 
             let worldCorners = localCorners.map { local -> SIMD2<Float> in
@@ -222,12 +222,12 @@ private enum CapturedRoomExtractor {
         return candidates.compactMap { candidate in
             guard let transform = directMatrix(in: candidate) else { return nil }
             let size = directVector3(in: candidate) ?? defaultSurfaceSize
-            let isDoor = isDoorLike(candidate)
+            let isDoor = isDoorOrOpening(candidate)
             return ExtractedSurface(transform: transform, size: size, isDoor: isDoor)
         }
     }
 
-    private static func isDoorLike(_ value: Any) -> Bool {
+    private static func isDoorOrOpening(_ value: Any) -> Bool {
         let mirror = Mirror(reflecting: value)
         for child in mirror.children {
             let labelText = child.label?.lowercased() ?? ""
