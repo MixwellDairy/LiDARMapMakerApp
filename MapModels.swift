@@ -70,8 +70,6 @@ struct RoomSegment: Codable, Hashable {
 }
 
 struct Surface3D: Codable, Hashable {
-    private static let matrixElementCount = 16
-
     var size: SIMD3<Float>
     var matrix: simd_float4x4
     var isDoor: Bool
@@ -95,9 +93,9 @@ struct Surface3D: Codable, Hashable {
         size = SIMD3<Float>(sx, sy, sz)
 
         let matrixArray = try container.decode([Float].self, forKey: .matrix)
-        let values = matrixArray.count == matrixElementCount
+        let values = matrixArray.count == 16
             ? matrixArray
-            : Array(repeating: 0, count: matrixElementCount)
+            : Array(repeating: 0, count: 16)
         matrix = simd_float4x4(
             SIMD4<Float>(values[0], values[1], values[2], values[3]),
             SIMD4<Float>(values[4], values[5], values[6], values[7]),
@@ -194,7 +192,7 @@ struct FloorPlan {
 }
 
 private enum CapturedRoomExtractor {
-    private static let maxReflectionDepth = 8
+    private static let maxReflectionDepthForCapturedRoomGraph = 8
     private static let defaultSurfaceSize = SIMD3<Float>(1, 1, 0.1)
 
     struct ExtractedSurface {
@@ -204,12 +202,15 @@ private enum CapturedRoomExtractor {
     }
 
     static func extract(from room: CapturedRoom) -> [ExtractedSurface] {
-        let candidates = nestedArrays(from: room, depth: 0, maxDepth: maxReflectionDepth)
+        let candidates = nestedArrays(from: room, depth: 0, maxDepth: maxReflectionDepthForCapturedRoomGraph)
         return candidates.compactMap { candidate in
-            guard let transform = firstMatrix(in: candidate, depth: 0, maxDepth: maxReflectionDepth) else { return nil }
-            let size = firstVector3(in: candidate, depth: 0, maxDepth: maxReflectionDepth) ?? defaultSurfaceSize
+            guard let geometry = extractGeometry(
+                in: candidate,
+                depth: 0,
+                maxDepth: maxReflectionDepthForCapturedRoomGraph
+            ) else { return nil }
             let isDoor = isDoorLike(candidate)
-            return ExtractedSurface(transform: transform, size: size, isDoor: isDoor)
+            return ExtractedSurface(transform: geometry.transform, size: geometry.size, isDoor: isDoor)
         }
     }
 
@@ -247,29 +248,40 @@ private enum CapturedRoomExtractor {
         return result
     }
 
-    private static func firstMatrix(in value: Any, depth: Int, maxDepth: Int) -> simd_float4x4? {
+    private static func extractGeometry(in value: Any, depth: Int, maxDepth: Int) -> (transform: simd_float4x4, size: SIMD3<Float>)? {
         guard depth <= maxDepth else { return nil }
-        if let matrix = value as? simd_float4x4 {
-            return matrix
-        }
-        for child in Mirror(reflecting: value).children {
-            if let matrix = firstMatrix(in: child.value, depth: depth + 1, maxDepth: maxDepth) {
-                return matrix
-            }
-        }
-        return nil
-    }
 
-    private static func firstVector3(in value: Any, depth: Int, maxDepth: Int) -> SIMD3<Float>? {
-        guard depth <= maxDepth else { return nil }
-        if let vector = value as? SIMD3<Float> {
-            return vector
+        var foundMatrix: simd_float4x4?
+        var foundVector: SIMD3<Float>?
+
+        if let matrix = value as? simd_float4x4 {
+            foundMatrix = matrix
         }
+        if let vector = value as? SIMD3<Float> {
+            foundVector = vector
+        }
+
         for child in Mirror(reflecting: value).children {
-            if let vector = firstVector3(in: child.value, depth: depth + 1, maxDepth: maxDepth) {
-                return vector
+            if let geometry = extractGeometry(in: child.value, depth: depth + 1, maxDepth: maxDepth) {
+                foundMatrix = foundMatrix ?? geometry.transform
+                foundVector = foundVector ?? geometry.size
+                if foundMatrix != nil, foundVector != nil {
+                    break
+                }
+            } else {
+                if foundMatrix == nil, let matrix = child.value as? simd_float4x4 {
+                    foundMatrix = matrix
+                }
+                if foundVector == nil, let vector = child.value as? SIMD3<Float> {
+                    foundVector = vector
+                }
+                if foundMatrix != nil, foundVector != nil {
+                    break
+                }
             }
         }
-        return nil
+
+        guard let matrix = foundMatrix else { return nil }
+        return (matrix, foundVector ?? defaultSurfaceSize)
     }
 }

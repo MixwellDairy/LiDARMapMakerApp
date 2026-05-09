@@ -10,7 +10,6 @@ struct RoomCaptureContainer: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ uiView: RoomCaptureView, context _: Context) {
-        _ = uiView
+    func updateUIView(_ _: RoomCaptureView, context _: Context) {
     }
 }
